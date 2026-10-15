@@ -1,0 +1,504 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Farm Escape 3D</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;font-family:Arial,sans-serif;background:#87ceeb;touch-action:none}
+canvas{display:block}
+#hud{position:fixed;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}
+.panel{background:#17231dd9;color:white;padding:10px 13px;border-radius:12px;font-weight:bold;text-shadow:1px 1px #333}
+#message{position:fixed;top:66px;left:50%;transform:translateX(-50%);background:#fff1c7;color:#332514;border-radius:12px;padding:10px 14px;text-align:center;font-weight:bold;max-width:90%;width:max-content}
+#animals{position:fixed;top:112px;left:8px;display:flex;flex-direction:column;gap:5px}
+.animal{border:2px solid white;border-radius:10px;background:#253b2cdd;color:white;padding:8px 10px;font-weight:bold;font-size:13px}
+.animal.selected{background:#ffbd35;color:#222;border-color:#fff}
+#joystick{position:fixed;bottom:24px;left:22px;width:132px;height:132px;border-radius:50%;background:#ffffff44;border:3px solid #ffffffb0;touch-action:none}
+#stick{position:absolute;width:54px;height:54px;left:36px;top:36px;border-radius:50%;background:#fff9;border:3px solid white;pointer-events:none}
+.controls{position:fixed;right:18px;bottom:24px;display:flex;flex-direction:column;gap:12px;align-items:center}
+.action{width:78px;height:65px;border:3px solid #fff;border-radius:18px;background:#ffbd35;color:#252525;font-size:15px;font-weight:900;box-shadow:0 4px #80531d;touch-action:none}
+.action:active{transform:translateY(3px);box-shadow:0 1px #80531d}
+#jump{background:#5bd4ff}
+#overlay{position:fixed;inset:0;background:#10251dcc;display:flex;align-items:center;justify-content:center;color:white;text-align:center;padding:20px}
+#card{background:#263e2b;border:4px solid #c7e5a0;border-radius:24px;padding:25px;max-width:420px;width:100%;box-shadow:0 10px 0 #142318}
+#card h1{font-size:30px;margin:5px}
+#card p{line-height:1.5}
+#start{font-size:20px;font-weight:bold;background:#ffd34f;border:0;border-radius:14px;padding:14px 25px}
+.hidden{display:none!important}
+@media(max-height:500px){
+#joystick{width:108px;height:108px;bottom:10px}
+#stick{left:24px;top:24px}
+.controls{bottom:10px;right:10px}
+.action{height:52px;width:68px}
+#animals{top:90px}
+.animal{padding:5px;font-size:11px}
+}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="panel" id="stage">🌾 NÔNG TRẠI</div>
+  <div class="panel" id="distance">📏 0 / 500 m</div>
+</div>
+<div id="message">Chọn con vật, tiến lại gần rồi nhấn BẮT!</div>
+<div id="animals">
+  <button class="animal selected" data-animal="Rabbit">🐇 Thỏ</button>
+  <button class="animal" data-animal="Duck">🦆 Vịt</button>
+  <button class="animal" data-animal="Turkey">🦃 Gà tây</button>
+  <button class="animal" data-animal="Cow">🐄 Bò</button>
+  <button class="animal" data-animal="Sheep">🐑 Cừu</button>
+  <button class="animal" data-animal="Horse">🐎 Ngựa</button>
+  <button class="animal" data-animal="Goat">🐐 Dê</button>
+  <button class="animal" data-animal="Pig">🐖 Lợn</button>
+</div>
+<div id="joystick"><div id="stick"></div></div>
+<div class="controls">
+  <button class="action" id="jump">⬆ NHẢY</button>
+  <button class="action" id="act">✋ BẮT</button>
+</div>
+<div id="overlay">
+  <div id="card">
+    <h1>🐷 FARM ESCAPE 3D</h1>
+    <p>Trốn khỏi chủ nông trại, mang động vật vượt qua đường chạy 500 m và về đích!</p>
+    <p>🕹️ Joystick: di chuyển tự do<br>⬆ Nhảy: vượt hàng rào, rơm, vũng nước<br>✋ Bắt: bắt con vật gần nhất</p>
+    <button id="start">▶ CHƠI NGAY</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87ceeb);
+scene.fog=new THREE.Fog(0x87ceeb,35,115);
+
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,300);
+const renderer=new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x627344,2));
+const sun=new THREE.DirectionalLight(0xfff3d5,2.5);
+sun.position.set(-15,30,15);
+sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+scene.add(sun);
+
+const mat=(color)=>new THREE.MeshLambertMaterial({color});
+const grass=mat(0x72b84e),dirt=mat(0xb99760);
+const wood=mat(0x8c592e),darkWood=mat(0x5a3820);
+const white=mat(0xf2f0dc),black=mat(0x292c31);
+const green=mat(0x3f873b);
+const boxGeo=new THREE.BoxGeometry(1,1,1);
+
+function block(parent,color,x,y,z,sx,sy,sz){
+ const m=new THREE.Mesh(boxGeo,typeof color==='number'?mat(color):color);
+ m.position.set(x,y,z);m.scale.set(sx,sy,sz);
+ m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;
+}
+function group(parent,x=0,y=0,z=0){
+ const g=new THREE.Group();g.position.set(x,y,z);parent.add(g);return g;
+}
+function floor(parent,x,z,sx,sz,color){
+ return block(parent,color,x,-.16,z,sx,.3,sz);
+}
+
+// Large farm terrain
+floor(scene,0,-35,180,180,grass);
+floor(scene,0,0,22,30,dirt);
+floor(scene,0,0,12,28,grass);
+
+function makeTree(x,z){
+ const g=group(scene,x,0,z);
+ block(g,0x79502d,0,1.1,0,.65,2.2,.65);
+ block(g,0x347d37,0,2.6,0,2.5,2.3,2.5);
+ block(g,0x4a963d,0,3.6,0,1.8,1.6,1.8);
+}
+for(let z=-65;z<20;z+=9){
+ makeTree(-12-(Math.abs(z)%3),z);
+ makeTree(12+(Math.abs(z)%4),z);
+}
+function fence(x,z,length,axis='x'){
+ const n=Math.floor(length/2);
+ for(let i=0;i<=n;i++){
+  let px=x+(axis==='x'?i*2:0);
+  let pz=z+(axis==='z'?i*2:0);
+  block(scene,wood,px,.6,pz,.18,1.2,.18);
+ }
+ for(const y of [.45,1]){
+  block(scene,darkWood,x+ (axis==='x'?length/2:0),y,z+(axis==='z'?length/2:0),
+    axis==='x'?length+.2:.16,.14,axis==='z'?length+.2:.16);
+ }
+}
+fence(-10,-8,20,'x');
+fence(-10,10,20,'x');
+fence(-10,-8,18,'z');
+fence(10,-8,18,'z');
+
+// Barn
+block(scene,0xb84537,-7,2,-24,8,4,7);
+block(scene,0x733327,-7,4.6,-24,9,1.2,8);
+block(scene,white,-7,1.4,-20.4,2.8,2.8,.2);
+block(scene,white,-7,3.2,-20.2,1.2,.3,.3);
+
+// Block character, farmer and animals
+function makePerson(isFarmer=false){
+ const g=group(scene);
+ const shirt=isFarmer?0x416db5:0x21a7dc;
+ block(g,shirt,0,1.55,0,.85,.85,.45);
+ block(g,0xf0c49a,0,2.35,0,.65,.65,.55);
+ block(g,isFarmer?0x48311f:0x5b3928,0,2.75,0,.78,.22,.65);
+ block(g,0x252525,-.15,2.38,.29,.09,.1,.06);
+ block(g,0x252525,.15,2.38,.29,.09,.1,.06);
+ block(g,0x252525,-.24,.65,0,.28,1.2,.35);
+ block(g,0x252525,.24,.65,0,.28,1.2,.35);
+ block(g,shirt,-.57,1.55,0,.28,.8,.3);
+ block(g,shirt,.57,1.55,0,.28,.8,.3);
+ if(isFarmer){
+  block(g,0x49331e,0,2.85,0,1,.17,.75);
+  block(g,0x49331e,0,2.98,0,.7,.18,.6);
+ }
+ return g;
+}
+function makeAnimal(type){
+ const g=group(scene);
+ const configs={
+ Rabbit:[0xc9b9a0,.8,.7],Duck:[0xe9d85a,.8,.65],
+ Turkey:[0x925d3e,1.1,.9],Cow:[0xf0eee5,1.5,1.15],
+ Sheep:[0xf5f0e2,1.2,1],Horse:[0x9b633c,1.5,1.2],
+ Goat:[0xd4c7aa,1.05,.95],Pig:[0xf19ca7,1.1,.85]
+ };
+ const [c,w,h]=configs[type]||configs.Cow;
+ const body=mat(c);
+ block(g,body,0,h,0,w,.65*w,.65*w);
+ block(g,body,0,h+.38*w,.35*w,.48*w,.48*w,.48*w);
+ for(const x of [-.32,.32]){
+  block(g,0x49372c,x*w,.3*w,0,.14*w,.6*w,.16*w);
+ }
+ if(type==='Rabbit'){
+  block(g,body,-.12*w,h+.9*w,.38*w,.13*w,.65*w,.13*w);
+  block(g,body,.12*w,h+.9*w,.38*w,.13*w,.65*w,.13*w);
+ }
+ if(type==='Cow'){
+  block(g,black,-.28*w,h+.05*w,.34*w,.28*w,.25*w,.06*w);
+  block(g,black,.3*w,h-.1*w,.34*w,.3*w,.25*w,.06*w);
+ }
+ if(type==='Duck'){
+  block(g,0xf08e25,0,h+.38*w,.68*w,.38*w,.13*w,.28*w);
+ }
+ if(type==='Turkey'){
+  for(let i=0;i<5;i++){
+   block(g,[0xb9322e,0xe4a52c,0x6d9b43][i%3],
+    (i-2)*.17*w,h+.2*w,-.4*w,.19*w,.45*w,.12*w);
+  }
+ }
+ if(type==='Pig')block(g,0xe7798b,0,h+.36*w,.65*w,.35*w,.22*w,.12*w);
+ if(type==='Horse'){
+  block(g,body,0,h+.55*w,.25*w,.3*w,.65*w,.3*w);
+ }
+ if(type==='Goat'){
+  block(g,0x806144,-.17*w,h+.65*w,.3*w,.09*w,.35*w,.09*w);
+  block(g,0x806144,.17*w,h+.65*w,.3*w,.09*w,.35*w,.09*w);
+ }
+ if(type==='Sheep'){
+  for(let i=0;i<5;i++)block(g,white,(i-2)*.2*w,h+.35*w,-.15*w,.25*w,.28*w,.3*w);
+ }
+ g.userData.type=type;
+ return g;
+}
+
+const player=makePerson(false);
+player.position.set(0,0,5);
+const farmer=makePerson(true);
+farmer.position.set(2,0,1);
+let selected='Rabbit',target=null,carried=null;
+const animals=[];
+const types=['Rabbit','Duck','Turkey','Cow','Sheep','Horse','Goat','Pig'];
+const positions=[
+ [-5,2],[-2,-2],[3,-4],[6,2],[-5,-4],[7,-2],[1,6],[-7,4]
+];
+types.forEach((t,i)=>{
+ const a=makeAnimal(t);
+ a.position.set(positions[i][0],0,positions[i][1]);
+ scene.add(a);animals.push(a);
+});
+
+function nearestAnimal(){
+ let best=null,d=Infinity;
+ for(const a of animals){
+  if(!a.visible)continue;
+  const dist=a.position.distanceTo(player.position);
+  if(dist<d){d=dist;best=a;}
+ }
+ return d<3.2?best:null;
+}
+function holdAnimal(a){
+ const type=a.userData.type;
+ a.visible=false;
+ carried=makeAnimal(type);
+ scene.add(carried);
+ carried.scale.setScalar(.55);
+ carried.position.set(0,1.5,.8);
+ carried.rotation.y=Math.PI;
+ player.add(carried);
+ return type;
+}
+
+// Runner track, 500 metres = 500 game units
+const trackStart=-12,trackEnd=-512;
+floor(scene,0,-262,14,510,0x9b8b69);
+floor(scene,0,-262,9,510,0xd5c18d);
+for(let z=-15;z>=-512;z-=10){
+ block(scene,white,-4.3,.015,z, .18,.03,3);
+ block(scene,white,4.3,.015,z, .18,.03,3);
+}
+for(let z=-30;z>-510;z-=25){
+ for(const x of [-7,7]){
+  block(scene,0x367a35,x,1,z,2,2,2);
+ }
+}
+block(scene,0x47bc4c,0,.1,-512,12,.25,2);
+block(scene,0x1e6b29,0,1,-514,12,2,.4);
+block(scene,white,-2,1.3,-513,.2,.7,.1);
+block(scene,white,0,1.3,-513,.2,.7,.1);
+block(scene,white,2,1.3,-513,.2,.7,.1);
+
+const obstacles=[];
+function makeObstacle(type,x,z){
+ const g=group(scene,x,0,z);
+ if(type==='FENCE'){
+  block(g,wood,0,.8,0,2.7,.2,.2);
+  block(g,wood,0,1.4,0,2.7,.2,.2);
+  for(const px of [-1.2,0,1.2])block(g,wood,px,.8,0,.16,1.5,.18);
+ }else if(type==='HAY'){
+  block(g,0xd6a33d,0,.55,0,1.5,1.1,1.3);
+  block(g,0xf2cf72,0,.58,.68,1.2,.08,.05);
+ }else if(type==='WATER'){
+  block(g,0x36a9e8,0,.035,0,2.4,.07,1.8);
+ }else if(type==='LOG'){
+  block(g,0x79502b,0,.45,0,2,.9,.9);
+ }
+ scene.add(g);obstacles.push({g,type,z,x});
+}
+let seed=13;
+function rand(){
+ seed=(seed*16807)%2147483647;
+ return (seed-1)/2147483646;
+}
+for(let z=-34;z>-505;z-=12){
+ const types=['FENCE','HAY','WATER','LOG'];
+ const lane=rand()<.5?-2.4:2.4;
+ makeObstacle(types[Math.floor(rand()*types.length)],lane,z);
+ if(rand()<.22)makeObstacle(types[Math.floor(rand()*types.length)],-lane,z-4);
+}
+
+// Joystick: continuous analog direction
+const joy=$('joystick'),stick=$('stick');
+let joyX=0,joyY=0,joyId=null;
+function setJoy(e){
+ const r=joy.getBoundingClientRect();
+ const dx=e.clientX-(r.left+r.width/2);
+ const dy=e.clientY-(r.top+r.height/2);
+ const max=r.width*.34;
+ const len=Math.hypot(dx,dy);
+ const k=len>max?max/len:1;
+ joyX=dx*k/max;joyY=dy*k/max;
+ stick.style.left=(r.width/2-27+dx*k)+'px';
+ stick.style.top=(r.height/2-27+dy*k)+'px';
+}
+function resetJoy(){
+ joyX=0;joyY=0;joyId=null;
+ stick.style.left=(joy.clientWidth/2-27)+'px';
+ stick.style.top=(joy.clientHeight/2-27)+'px';
+}
+joy.addEventListener('pointerdown',e=>{
+ e.preventDefault();joyId=e.pointerId;
+ joy.setPointerCapture(e.pointerId);setJoy(e);
+});
+joy.addEventListener('pointermove',e=>{
+ if(e.pointerId===joyId)setJoy(e);
+});
+joy.addEventListener('pointerup',resetJoy);
+joy.addEventListener('pointercancel',resetJoy);
+
+let mode='farm',started=false,gameOver=false;
+let distance=0,speed=0,jumpY=0,jumpV=0;
+let farmerCaught=false,farmerLaugh=0;
+const clock=new THREE.Clock();
+const forward=new THREE.Vector3(0,0,-1);
+let lastMessage='';
+function say(s){
+ if(lastMessage!==s){$('message').textContent=s;lastMessage=s;}
+}
+function chooseAnimal(type){
+ selected=type;
+ document.querySelectorAll('.animal').forEach(b=>
+  b.classList.toggle('selected',b.dataset.animal===type));
+ say('Đã chọn '+type+'. Tiến lại gần con vật rồi nhấn BẮT!');
+}
+document.querySelectorAll('.animal').forEach(b=>{
+ b.addEventListener('click',()=>chooseAnimal(b.dataset.animal));
+});
+
+function action(){
+ if(!started||gameOver)return;
+ if(mode==='farm'){
+  const a=nearestAnimal();
+  if(!a){
+   say('Bạn chưa đủ gần! Hãy di chuyển tới gần con vật.');
+   return;
+  }
+  if(a.userData.type!==selected){
+   say('Bạn đã chọn '+selected+'. Hãy đến đúng con vật đó!');
+   return;
+  }
+  const type=holdAnimal(a);
+  mode='run';distance=0;speed=0;
+  player.position.set(0,0,trackStart);
+  farmer.position.set(2,0,trackStart+5);
+  farmer.rotation.y=0;
+  $('stage').textContent='🏃 CHẠY TRỐN!';
+  $('animals').classList.add('hidden');
+  say('Chủ trại phát hiện rồi! Chạy tới đích 500 m!');
+ }else if(mode==='caught'){
+  restart();
+ }
+}
+$('act').addEventListener('pointerdown',e=>{e.preventDefault();action();});
+$('jump').addEventListener('pointerdown',e=>{
+ e.preventDefault();
+ if(started&&!gameOver&&jumpY<=0.01){jumpV=8.2;}
+});
+
+function startGame(){
+ $('overlay').classList.add('hidden');
+ started=true;
+}
+$('start').addEventListener('click',startGame);
+
+function endGame(win){
+ gameOver=true;mode=win?'win':'caught';
+ $('overlay').classList.remove('hidden');
+ $('card').innerHTML=win?
+ `<h1>🏆 CHIẾN THẮNG!</h1>
+ <p>Bạn đã chạy đủ 500 m và mang ${selected} về đích!</p>
+ <p>🎉 Con vật đã thuộc về bạn!</p>
+ <button id="start">🔄 CHƠI LẠI</button>`:
+ `<h1>😂 BỊ BẮT RỒI!</h1>
+ <p>Chủ nông trại đã lấy lại ${selected} và giơ lên cười!</p>
+ <p>Hãy thử lại và nhảy qua các chướng ngại vật.</p>
+ <button id="start">🔄 CHƠI LẠI</button>`;
+ $('start').onclick=restart;
+ if(!win){
+  farmerCaught=true;
+  if(carried){
+   player.remove(carried);
+   carried.position.set(farmer.position.x,3,farmer.position.z);
+   scene.add(carried);carried=carried;
+   carried.scale.setScalar(.8);
+  }
+  say('Chủ trại đã bắt được bạn!');
+ }
+}
+function restart(){
+ location.reload();
+}
+
+const clockStart=new THREE.Clock();
+function update(dt){
+ if(!started||gameOver)return;
+ const moveSpeed=mode==='farm'?7:8;
+ const inputX=joyX,inputZ=joyY;
+ if(mode==='farm'){
+  const dx=inputX*moveSpeed*dt;
+  const dz=inputZ*moveSpeed*dt;
+  player.position.x+=dx;
+  player.position.z+=dz;
+  player.position.x=THREE.MathUtils.clamp(player.position.x,-9,9);
+  player.position.z=THREE.MathUtils.clamp(player.position.z,-10,14);
+  if(Math.abs(dx)+Math.abs(dz)>.01){
+   player.rotation.y=Math.atan2(dx,dz);
+  }
+  const a=nearestAnimal();
+  if(a&&a.userData.type===selected){
+   say('Đã gần '+selected+'! Nhấn BẮT để bắt con vật.');
+  }else{
+   say('Chọn con vật, tiến lại gần rồi nhấn BẮT!');
+  }
+  // Farmer slowly follows player before the capture.
+  const d=farmer.position.distanceTo(player.position);
+  if(d>2.2){
+   farmer.position.lerp(player.position,Math.min(dt*.08,1));
+  }
+ }else if(mode==='run'){
+  // Forward progress is controlled automatically; joystick steers.
+  speed=8;
+  distance+=speed*dt;
+  player.position.z=trackStart-distance;
+  player.position.x+=inputX*7*dt;
+  player.position.x=THREE.MathUtils.clamp(player.position.x,-3.5,3.5);
+  player.rotation.y=inputX*.35;
+  // Jump arc
+  jumpV-=20*dt;
+  jumpY+=jumpV*dt;
+  if(jumpY<0){jumpY=0;jumpV=0;}
+  player.position.y=jumpY;
+  // Obstacles collide when close, unless the player is high enough.
+  for(const o of obstacles){
+   if(o.hit)continue;
+   const dz=Math.abs(player.position.z-o.z);
+   const dx=Math.abs(player.position.x-o.x);
+   if(dz<1.1&&dx<1.25){
+    const safeJump=jumpY>(o.type==='FENCE'?1.15:.9);
+    if(!safeJump){o.hit=true;endGame(false);return;}
+    o.hit=true;
+   }
+  }
+  // Farmer chase
+  farmer.position.z=player.position.z+Math.max(3,7-distance*.008);
+  farmer.position.x+=(player.position.x-farmer.position.x)*dt*.8;
+  farmer.rotation.y=0;
+  if(distance>500){distance=500;endGame(true);return;}
+  $('distance').textContent='📏 '+Math.floor(distance)+' / 500 m';
+  if(distance<180)say('Chạy nhanh! Chủ trại đang đuổi theo!');
+  else if(distance<380)say('Còn '+Math.floor(500-distance)+' m. Né chướng ngại vật!');
+  else say('Sắp tới đích rồi! Cố lên!');
+ }
+ // Camera follows player smoothly
+ const targetPos=new THREE.Vector3(
+  player.position.x,
+  player.position.y+5,
+  player.position.z+(mode==='farm'?9:10)
+ );
+ camera.position.lerp(targetPos,Math.min(1,dt*5));
+ const look=new THREE.Vector3(player.position.x,player.position.y+1,player.position.z-3);
+ camera.lookAt(look);
+}
+
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.04);
+ update(dt);
+ renderer.render(scene,camera);
+}
+camera.position.set(0,7,15);
+camera.lookAt(0,1,0);
+animate();
+
+addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+})();
+</script>
+</body>
+</html>
